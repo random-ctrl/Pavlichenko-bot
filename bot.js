@@ -6,8 +6,17 @@ import inquirer from "inquirer";
 import figlet from "figlet";
 import ora from "ora";
 
+dotenv.config();
+
+const PORT = 5000;
+const app = express();
+
+
+
 console.clear();
-figlet("Pavlichenko Bot", function (err, data) {
+
+// Pretty and big text
+figlet("Pavlichenko Bot", (err, data) => {
   if (err) {
     console.log("Something went wrong...");
     console.dir(err);
@@ -16,10 +25,10 @@ figlet("Pavlichenko Bot", function (err, data) {
   console.log(data);
 });
 
-const app = express();
-dotenv.config();
 
+// Load our configs and set stuff
 console.log(chalk.green("Loading configs..."));
+
 const data = {
   WBNB: process.env.WBNB_CONTRACT, //wbnb
   to_PURCHASE: process.env.TO_PURCHASE, // token that you will purchase = BUSD for test '0xe9e7cea3dedca5984780bafc599bd69add087d56'
@@ -33,20 +42,25 @@ const data = {
   minBnb: process.env.MIN_LIQUIDITY_ADDED, //min liquidity added
 };
 
+
 let initialLiquidityDetected = false;
 let jmlBnb = 0;
+
 
 const bscMainnetUrl = "https://bsc-dataseed1.defibit.io/"; //https://bsc-dataseed1.defibit.io/ https://bsc-dataseed.binance.org/
 const wss = "wss://bsc-ws-node.nariox.org:443";
 const mnemonic = process.env.YOUR_MNEMONIC; //your memonic;
 const tokenIn = data.WBNB;
 const tokenOut = data.to_PURCHASE;
+
 // const provider = new ethers.providers.JsonRpcProvider(bscMainnetUrl)
 const provider = new ethers.providers.WebSocketProvider(wss);
 const wallet = new ethers.Wallet(mnemonic);
 const account = wallet.connect(provider);
 
 console.log(chalk.green.inverse("Loading complete!"));
+
+
 const factory = new ethers.Contract(
   data.factory,
   [
@@ -80,15 +94,14 @@ const erc = new ethers.Contract(
   account
 );
 
-const run = async () => {
-  await checkLiq();
-};
 
 const pairAddressx = await factory.getPair(tokenIn, tokenOut);
 console.log(chalk.blue(`pairAddress: ${pairAddressx}`));
 const spinner = ora("Waiting for liquidity");
 
-let checkLiq = async () => {
+
+
+async function checkLiq() {
   if (pairAddressx !== null && pairAddressx !== undefined) {
     // console.log("pairAddress.toString().indexOf('0x0000000000000')", pairAddress.toString().indexOf('0x0000000000000'));
     if (pairAddressx.toString().indexOf("0x0000000000000") > -1) {
@@ -111,13 +124,16 @@ let checkLiq = async () => {
   }
 };
 
-let buyAction = async () => {
+
+
+async function buyAction() {
+
   if (initialLiquidityDetected === true) {
-    console.log("not buy cause already buy");
+    console.log("Won't buy because already bought");
     return null;
   }
 
-  console.log("ready to buy");
+  console.log("Ready to buy");
   try {
     initialLiquidityDetected = true;
     //We buy x amount of the new token for our wbnb
@@ -143,22 +159,20 @@ let buyAction = async () => {
     console.log(chalk.yellow(`tokenOut: ${tokenOut}`));
     console.log(chalk.yellow(`data.recipient: ${data.recipient}`));
     console.log(chalk.yellow(`data.gasLimit: ${data.gasLimit}`));
-    console.log(
-      chalk.yellow(
-        `data.gasPrice: ${ethers.utils.parseUnits(`${data.gasPrice}`, "gwei")}`
-      )
-    );
+    console.log(chalk.yellow(
+      `data.gasPrice: ${ethers.utils.parseUnits(`${data.gasPrice}`, "gwei")}`
+    ));
 
     const tx = await router.swapExactTokensForTokens(
       amountIn,
       amountOutMin,
       [tokenIn, tokenOut],
       data.recipient,
-      Date.now() + 1000 * 60 * 5, //5 minutes
+      Date.now() + 1000 * 60 * 5, // 5 minutes
       {
         gasLimit: data.gasLimit,
         gasPrice: ethers.utils.parseUnits(`${data.gasPrice}`, "gwei"),
-        nonce: null, //set you want buy at where position in blocks
+        nonce: null, // Set you want buy at where position in blocks
       }
     );
 
@@ -169,7 +183,7 @@ let buyAction = async () => {
     return receipt;
   } catch (err) {
     let error = JSON.parse(JSON.stringify(err));
-    console.log(`Error caused by : 
+    console.log(`Error caused by :
         {
         reason : ${error.reason},
         transactionHash : ${error.transactionHash}
@@ -182,7 +196,7 @@ let buyAction = async () => {
         {
           type: "confirm",
           name: "runAgain",
-          message: "Do you want to run again thi bot?",
+          message: "Do you want to run again this bot?",
         },
       ])
       .then((answers) => {
@@ -203,15 +217,15 @@ let buyAction = async () => {
   }
 };
 
-run();
 
-const PORT = 5000;
 
-app.listen(
-  PORT,
-  console.log(
-    chalk.yellow(
-      `Listening for Liquidity Addition to token ${data.to_PURCHASE}`
-    )
-  )
+async function run () {
+  await checkLiq();
+};
+
+
+app.listen(PORT, () =>
+  console.log(chalk.yellow(`Listening for Liquidity Addition to token ${data.to_PURCHASE}`))
 );
+
+run();
