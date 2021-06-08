@@ -95,33 +95,17 @@ const erc = new ethers.Contract(
 );
 
 
-const pairAddressx = await factory.getPair(tokenIn, tokenOut);
-console.log(chalk.blue(`pairAddress: ${pairAddressx}`));
-const spinner = ora("Waiting for liquidity");
 
 
 
-async function checkLiq() {
-  if (pairAddressx !== null && pairAddressx !== undefined) {
-    // console.log("pairAddress.toString().indexOf('0x0000000000000')", pairAddress.toString().indexOf('0x0000000000000'));
-    if (pairAddressx.toString().indexOf("0x0000000000000") > -1) {
-      console.log(
-        chalk.red(`pairAddress ${pairAddressx} not detected. Auto restart`)
-      );
-      return await run();
-    }
-  }
+
+async function checkLiq(pairAddressx) {
+
   const pairBNBvalue = await erc.balanceOf(pairAddressx);
   jmlBnb = ethers.utils.formatEther(pairBNBvalue);
   //console.log(`value BNB : ${jmlBnb}`);
 
-  if (jmlBnb > data.minBnb) {
-    setTimeout(() => buyAction(), 3000);
-  } else {
-    initialLiquidityDetected = false;
-    spinner.start();
-    return await checkLiq();
-  }
+  return (jmlBnb > data.minBnb)
 };
 
 
@@ -218,9 +202,24 @@ async function buyAction() {
 };
 
 
+const spinner = ora("Waiting for liquidity");
 
 async function run () {
-  await checkLiq();
+  const pairAddressx = await factory.getPair(tokenIn, tokenOut);
+  console.log(chalk.blue(`pairAddress: ${pairAddressx}`));
+  if (pairAddressx !== null && pairAddressx !== undefined) {
+    // console.log("pairAddress.toString().indexOf('0x0000000000000')", pairAddress.toString().indexOf('0x0000000000000'));
+    if (pairAddressx.toString().indexOf("0x0000000000000") > -1) {
+      console.log(
+        chalk.red(`pairAddress ${pairAddressx} not detected. Auto restart`)
+      );
+      return await run();
+    }
+  }
+  while (!await checkLiq(pairAddressx)) {
+     spinner.start();// se quiser esperar entre cada check
+  }
+  buyAction();
 };
 
 
