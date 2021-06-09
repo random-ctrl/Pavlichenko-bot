@@ -13,19 +13,15 @@ const app = express();
 
 console.clear();
 // Pretty and big text
-figlet("Pavlichenko Bot", (err, data) => {
-  if (err) {
-    console.log("Something went wrong...");
-    console.dir(err);
-    return;
-  }
-  console.log(data);
-});
+console.log(figlet.textSync("Pavlichenko Bot",{
+  font: "doom",
+  width: 80,
+}))
 
 
 // Load our configs and set stuff
-console.log(chalk.green("Loading configs..."));
-
+const loadingspinner = ora(chalk.green("Loading configs"))
+loadingspinner.start()
 const data = {
   WBNB: process.env.WBNB_CONTRACT, //wbnb
   to_PURCHASE: process.env.TO_PURCHASE, // token that you will purchase = BUSD for test '0xe9e7cea3dedca5984780bafc599bd69add087d56'
@@ -98,8 +94,8 @@ const abi = [
 const tokenSwap = new ethers.Contract(data.to_PURCHASE, abi, provider);
 let symbol = await tokenSwap.symbol()
 
-console.log(chalk.green.inverse("Loading complete!"));
-      
+//onsole.log(chalk.green.inverse("Loading complete!"));
+loadingspinner.succeed()     
 async function checkLiq(pairAddressx) {
 
   const pairBNBvalue = await erc.balanceOf(pairAddressx);
@@ -127,6 +123,7 @@ async function buyAction() {
 
   console.log("Ready to buy");
   const spinnertx = ora("Waiting for tx success");
+  spinnertx.spinner = "dots8Bit"
   try {
     initialLiquidityDetected = true;
     //We buy x amount of the new token for our wbnb
@@ -180,9 +177,10 @@ async function buyAction() {
     let error = JSON.parse(JSON.stringify(err));
     spinnertx.fail(`Error caused by :
     {
-    reason : ${error.reason},
-    transactionHash : ${error.transactionHash},
-    message : Please check your BNB/WBNB balance, maybe its due because insufficient balance or approve your token manually on pancakeSwap
+    reason: ${error.reason},
+    code: ${error.code},
+    transactionHash: ${error.transactionHash},
+    message: Please check your BNB/WBNB balance, maybe its due because insufficient balance or approve your token manually on pancakeSwap
     }`)
     //console.log(error);
 
@@ -217,10 +215,11 @@ const spinner = ora("Waiting for liquidity");
 
 async function run () {
   checkBalance().then(function (result) {
-    console.log(chalk.green("Wallet balance: ") + chalk.yellow(ethers.utils.formatEther(result) + " WBNB"));
-  });
-  console.log(chalk.yellow("TokenIn:  " + tokenIn + " [WBNB]"))
-  console.log(chalk.magenta("TokenOut: " + tokenOut + " [" + symbol + "]"))
+    console.log(chalk.green("Wallet balance: ") + chalk.yellow(ethers.utils.formatEther(result) + " WBNB\n"));
+  }).then(function(){
+    console.log(chalk.yellow("TokenIn:  " + "[WBNB] - " + tokenIn))
+    console.log(chalk.magenta("TokenOut: " + "[" + symbol + "] - " + tokenOut + "\n"))
+  })
   let ok = false;
   let pairAddressx = await factory.getPair(tokenIn, tokenOut);
   do {
@@ -246,7 +245,7 @@ async function run () {
 
 
 app.listen(PORT, () =>
-  console.log(chalk.yellow(`Listening for Liquidity Addition to token ${data.to_PURCHASE}`))
+  console.log(chalk.yellow('Connected!\n'))
 );
 
 run();
