@@ -11,10 +11,7 @@ dotenv.config();
 const PORT = 5000;
 const app = express();
 
-
-
 console.clear();
-
 // Pretty and big text
 figlet("Pavlichenko Bot", (err, data) => {
   if (err) {
@@ -46,19 +43,18 @@ const data = {
 let initialLiquidityDetected = false;
 let jmlBnb = 0;
 
-
+const bscTestnetUrl = "https://data-seed-prebsc-1-s1.binance.org:8545/";
 const bscMainnetUrl = "https://bsc-dataseed1.defibit.io/"; //https://bsc-dataseed1.defibit.io/ https://bsc-dataseed.binance.org/
 const wss = "wss://bsc-ws-node.nariox.org:443";
 const mnemonic = process.env.YOUR_MNEMONIC; //your memonic;
 const tokenIn = data.WBNB;
 const tokenOut = data.to_PURCHASE;
 
-// const provider = new ethers.providers.JsonRpcProvider(bscMainnetUrl)
-const provider = new ethers.providers.WebSocketProvider(wss);
+const provider = new ethers.providers.JsonRpcProvider(bscTestnetUrl)
+//const provider = new ethers.providers.WebSocketProvider(wss);
 const wallet = new ethers.Wallet(mnemonic);
 const account = wallet.connect(provider);
 
-console.log(chalk.green.inverse("Loading complete!"));
 
 
 const factory = new ethers.Contract(
@@ -68,8 +64,8 @@ const factory = new ethers.Contract(
     "function getPair(address tokenA, address tokenB) external view returns (address pair)",
   ],
   account
-);
-
+  );
+  
 const router = new ethers.Contract(
   data.router,
   [
@@ -77,8 +73,8 @@ const router = new ethers.Contract(
     "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
   ],
   account
-);
-
+  );
+  
 const erc = new ethers.Contract(
   data.WBNB,
   [
@@ -92,13 +88,18 @@ const erc = new ethers.Contract(
     },
   ],
   account
-);
+  );
+const abi = [
+  // Read-Only Functions
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+];
+const tokenSwap = new ethers.Contract(data.to_PURCHASE, abi, provider);
+let symbol = await tokenSwap.symbol()
 
-
-
-
-
-
+console.log(chalk.green.inverse("Loading complete!"));
+      
 async function checkLiq(pairAddressx) {
 
   const pairBNBvalue = await erc.balanceOf(pairAddressx);
@@ -108,7 +109,14 @@ async function checkLiq(pairAddressx) {
   return (jmlBnb > data.minBnb)
 };
 
+async function checkGains(pairAddressx){
 
+}
+
+async function checkBalance(){
+  let balance = await erc.balanceOf(data.recipient);
+  return balance;
+}
 
 async function buyAction() {
 
@@ -118,6 +126,7 @@ async function buyAction() {
   }
 
   console.log("Ready to buy");
+  const spinnertx = ora("Waiting for tx success");
   try {
     initialLiquidityDetected = true;
     //We buy x amount of the new token for our wbnb
@@ -160,22 +169,24 @@ async function buyAction() {
       }
     );
 
+    spinnertx.start()
     const receipt = await tx.wait();
+    if (receipt.status){spinnertx.succeed()}
     console.log(
       `Transaction receipt : https://www.bscscan.com/tx/${receipt.logs[1].transactionHash}`
     );
-    return receipt;
+    checkGains();
   } catch (err) {
     let error = JSON.parse(JSON.stringify(err));
-    console.log(`Error caused by :
-        {
-        reason : ${error.reason},
-        transactionHash : ${error.transactionHash}
-        message : Please check your BNB/WBNB balance, maybe its due because insufficient balance or approve your token manually on pancakeSwap
-        }`);
-    console.log(error);
+    spinnertx.fail(`Error caused by :
+    {
+    reason : ${error.reason},
+    transactionHash : ${error.transactionHash},
+    message : Please check your BNB/WBNB balance, maybe its due because insufficient balance or approve your token manually on pancakeSwap
+    }`)
+    //console.log(error);
 
-    inquirer
+    /* inquirer
       .prompt([
         {
           type: "confirm",
@@ -197,28 +208,39 @@ async function buyAction() {
         } else {
           process.exit();
         }
-      });
+      }); */
+
   }
 };
-
 
 const spinner = ora("Waiting for liquidity");
 
 async function run () {
-  const pairAddressx = await factory.getPair(tokenIn, tokenOut);
-  console.log(chalk.blue(`pairAddress: ${pairAddressx}`));
-  if (pairAddressx !== null && pairAddressx !== undefined) {
-    // console.log("pairAddress.toString().indexOf('0x0000000000000')", pairAddress.toString().indexOf('0x0000000000000'));
-    if (pairAddressx.toString().indexOf("0x0000000000000") > -1) {
-      console.log(
-        chalk.red(`pairAddress ${pairAddressx} not detected. Auto restart`)
-      );
-      return await run();
+  checkBalance().then(function (result) {
+    console.log(chalk.green("Wallet balance: ") + chalk.yellow(ethers.utils.formatEther(result) + " WBNB"));
+  });
+  console.log(chalk.yellow("TokenIn:  " + tokenIn + " [WBNB]"))
+  console.log(chalk.magenta("TokenOut: " + tokenOut + " [" + symbol + "]"))
+  let ok = false;
+  let pairAddressx = await factory.getPair(tokenIn, tokenOut);
+  do {
+    pairAddressx = await factory.getPair(tokenIn, tokenOut);
+    console.log(chalk.cyan(`pairAddress: ${pairAddressx}`));
+    if (pairAddressx !== null && pairAddressx !== undefined) {
+      // console.log("pairAddress.toString().indexOf('0x0000000000000')", pairAddress.toString().indexOf('0x0000000000000'));
+      if (pairAddressx.toString().indexOf("0x0000000000000") > -1) {
+        console.log(
+          chalk.red(`pairAddress ${pairAddressx} not detected. Auto restart`)
+        );
+      }else{
+        ok = true
+      }
     }
-  }
+  } while(!ok)
   while (!await checkLiq(pairAddressx)) {
-     spinner.start();// se quiser esperar entre cada check
+    spinner.start();// se quiser esperar entre cada check
   }
+  spinner.succeed();
   buyAction();
 };
 
