@@ -71,46 +71,37 @@ const router = new ethers.Contract(
   account
   );
   
-const erc = new ethers.Contract(
-  data.WBNB,
-  [
-    {
-      constant: true,
-      inputs: [{ name: "_owner", type: "address" }],
-      name: "balanceOf",
-      outputs: [{ name: "balance", type: "uint256" }],
-      payable: false,
-      type: "function",
-    },
-  ],
-  account
-  );
 const abi = [
   // Read-Only Functions
   "function balanceOf(address owner) view returns (uint256)",
   "function decimals() view returns (uint8)",
   "function symbol() view returns (string)",
-];
+  "function approve(address spender, uint amount) public returns(bool)",
+  ];
+const erc = new ethers.Contract(data.WBNB,abi,account);
 const tokenSwap = new ethers.Contract(data.to_PURCHASE, abi, provider);
-let symbol = await tokenSwap.symbol()
+let inSymbol = await erc.symbol()
+let inDecimal = await erc.decimals()
+let outSymbol = await tokenSwap.symbol()
+let outDecimal = await tokenSwap.decimals()
 
 //onsole.log(chalk.green.inverse("Loading complete!"));
 loadingspinner.succeed()     
-async function checkLiq(pairAddressx) {
+async function checkLiq(pairAddressx, liq) {
 
   const pairBNBvalue = await erc.balanceOf(pairAddressx);
   jmlBnb = ethers.utils.formatEther(pairBNBvalue);
-  //console.log(`value BNB : ${jmlBnb}`);
-
-  return (jmlBnb > data.minBnb)
+  //console.log(`Liquidity value: ${jmlBnb}`);
+  return (jmlBnb)
 };
 
-async function checkGains(pairAddressx){
-
+async function checkGains(){
+  let balance = await checkBalance(tokenSwap)
+  console.log(chalk.green("\nToken Balance: ") + chalk.yellow(ethers.utils.formatUnits(balance, outDecimal)) + " " + outSymbol + "\n")
 }
 
-async function checkBalance(){
-  let balance = await erc.balanceOf(data.recipient);
+async function checkBalance(token){
+  let balance = await token.balanceOf(data.recipient);
   return balance;
 }
 
@@ -120,6 +111,20 @@ async function buyAction() {
     console.log("Won't buy because already bought");
     return null;
   }
+  console.log("Before Approve");
+  const valueToapprove = ethers.utils.parseUnits("0.1", "ether");
+  const txA = await erc.approve(
+  router.address,
+  valueToapprove,
+  {
+  gasPrice: ethers.utils.parseUnits(`${data.gasPrice}`, "gwei"),
+  gasLimit: '162445'
+  }
+  );
+  console.log("After Approve");
+  const receipt = await txA.wait();
+  console.log("‘Transaction receipt’");
+  //console.log(receipt);
 
   console.log("Ready to buy");
   const spinnertx = ora("Waiting for tx success");
@@ -127,7 +132,7 @@ async function buyAction() {
   try {
     initialLiquidityDetected = true;
     //We buy x amount of the new token for our wbnb
-    const amountIn = ethers.utils.parseUnits(`${data.AMOUNT_OF_WBNB}`, "ether");
+    const amountIn = ethers.utils.parseEther(data.AMOUNT_OF_WBNB);
     const amounts = await router.getAmountsOut(amountIn, [tokenIn, tokenOut]);
 
     //Our execution price will be a bit different, we need some flexbility
@@ -137,21 +142,19 @@ async function buyAction() {
       chalk.green.inverse(`Start to buy \n`) +
         `Buying Token
         =================
-        tokenIn: ${amountIn.toString()} ${tokenIn} (WBNB)
-        tokenOut: ${amountOutMin.toString()} ${tokenOut}
+        tokenIn: ${ethers.utils.formatEther(amountIn).toString()} ${tokenIn} [${inSymbol}]
+        tokenOut: ${ethers.utils.formatUnits(amountOutMin, outDecimal).toString()} ${tokenOut} [${outSymbol}]
       `
     );
 
     console.log("Processing Transaction.....");
-    console.log(chalk.yellow(`amountIn: ${amountIn}`));
-    console.log(chalk.yellow(`amountOutMin: ${amountOutMin}`));
+    console.log(chalk.yellow(`amountIn: ${ethers.utils.formatEther(amountIn)}`));
+    console.log(chalk.yellow(`amountOutMin: ${ethers.utils.formatUnits(amountOutMin, outDecimal)}`));
     console.log(chalk.yellow(`tokenIn: ${tokenIn}`));
     console.log(chalk.yellow(`tokenOut: ${tokenOut}`));
     console.log(chalk.yellow(`data.recipient: ${data.recipient}`));
     console.log(chalk.yellow(`data.gasLimit: ${data.gasLimit}`));
-    console.log(chalk.yellow(
-      `data.gasPrice: ${ethers.utils.parseUnits(`${data.gasPrice}`, "gwei")}`
-    ));
+    console.log(chalk.yellow(`data.gasPrice: ${data.gasPrice}`));
 
     const tx = await router.swapExactTokensForTokens(
       amountIn,
@@ -211,14 +214,14 @@ async function buyAction() {
   }
 };
 
-const spinner = ora("Waiting for liquidity");
+const spinner = ora();
 
 async function run () {
-  checkBalance().then(function (result) {
+  checkBalance(erc).then(function (result) {
     console.log(chalk.green("Wallet balance: ") + chalk.yellow(ethers.utils.formatEther(result) + " WBNB\n"));
   }).then(function(){
     console.log(chalk.yellow("TokenIn:  " + "[WBNB] - " + tokenIn))
-    console.log(chalk.magenta("TokenOut: " + "[" + symbol + "] - " + tokenOut + "\n"))
+    console.log(chalk.magenta("TokenOut: " + "[" + outSymbol + "] - " + tokenOut + "\n"))
   })
   let ok = false;
   let pairAddressx = await factory.getPair(tokenIn, tokenOut);
@@ -236,8 +239,14 @@ async function run () {
       }
     }
   } while(!ok)
-  while (!await checkLiq(pairAddressx)) {
-    spinner.start();// se quiser esperar entre cada check
+  let liq = false
+  let liqValue = 0
+  while (!liq) {
+    liqValue = await checkLiq(pairAddressx, liq)
+    liq = liqValue > data.minBnb
+    if (!spinner.isSpinning) {
+      spinner.start(`Waiting for liquidity\n  Liquidity value: ${liqValue} \n  Threshold: ${data.minBnb}\n`);
+    }
   }
   spinner.succeed();
   buyAction();
